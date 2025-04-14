@@ -186,6 +186,12 @@ def ensure_clean_state():
 def save_session_state():
     """Save session state to JSON file."""
     state_to_save = {
+        'current_step': st.session_state.get('current_step', 1),
+        'steps_completed': list(st.session_state.get('steps_completed', set())),
+        'generated_queries': st.session_state.get('generated_queries', pd.DataFrame()).to_dict('records') if isinstance(st.session_state.get('generated_queries'), pd.DataFrame) else [],
+        'scraped_profiles': st.session_state.get('scraped_profiles', pd.DataFrame()).to_dict('records') if isinstance(st.session_state.get('scraped_profiles'), pd.DataFrame) else [],
+        'filtered_profiles': st.session_state.get('filtered_profiles', pd.DataFrame()).to_dict('records') if isinstance(st.session_state.get('filtered_profiles'), pd.DataFrame) else [],
+        'csv_valid': st.session_state.get('csv_valid', False),
         'api_keys': st.session_state.get('api_keys', {}),
         'email_settings': st.session_state.get('email_settings', {}),
         'company_settings': st.session_state.get('company_settings', {}),
@@ -193,7 +199,10 @@ def save_session_state():
         'business_context': st.session_state.get('business_context', None),
         'follow_up_templates': st.session_state.get('follow_up_templates', {}),
         'follow_up_tracking': st.session_state.get('follow_up_tracking', {}),
-        'email_logs': st.session_state.get('email_logs', pd.DataFrame()).to_dict('records') if 'email_logs' in st.session_state else []
+        'email_logs': st.session_state.get('email_logs', pd.DataFrame()).to_dict('records') if isinstance(st.session_state.get('email_logs'), pd.DataFrame) else [],
+        'query_instructions': st.session_state.get('query_instructions', ""),
+        'email_template_subject': st.session_state.get('email_template_subject', ""),
+        'email_template_body': st.session_state.get('email_template_body', "")
     }
     
     try:
@@ -221,14 +230,22 @@ def load_session_state():
         with open('session_state.json', 'r') as f:
             saved_state = json.load(f)
             
-        # Restore saved states
+        # Restore all saved states
+        st.session_state['current_step'] = saved_state.get('current_step', 1)
+        st.session_state['steps_completed'] = set(saved_state.get('steps_completed', []))
+        
+        # Restore DataFrames
+        st.session_state['generated_queries'] = pd.DataFrame(saved_state.get('generated_queries', []))
+        st.session_state['scraped_profiles'] = pd.DataFrame(saved_state.get('scraped_profiles', []))
+        st.session_state['filtered_profiles'] = pd.DataFrame(saved_state.get('filtered_profiles', []))
+        
+        # Restore other states
+        st.session_state['csv_valid'] = saved_state.get('csv_valid', False)
         st.session_state['api_keys'] = saved_state.get('api_keys', {})
         st.session_state['email_settings'] = saved_state.get('email_settings', {})
         st.session_state['company_settings'] = saved_state.get('company_settings', {})
         st.session_state['zoho_settings'] = saved_state.get('zoho_settings', {})
         st.session_state['business_context'] = saved_state.get('business_context', None)
-        
-        # Restore follow-up related states
         st.session_state['follow_up_templates'] = saved_state.get('follow_up_templates', {
             '3_days': {'subject': '', 'body': ''},
             '6_days': {'subject': '', 'body': ''},
@@ -239,10 +256,10 @@ def load_session_state():
             '21_days': {'subject': '', 'body': ''}
         })
         st.session_state['follow_up_tracking'] = saved_state.get('follow_up_tracking', {})
-        
-        # Restore email logs as DataFrame
-        email_logs = saved_state.get('email_logs', [])
-        st.session_state['email_logs'] = pd.DataFrame(email_logs) if email_logs else pd.DataFrame()
+        st.session_state['email_logs'] = pd.DataFrame(saved_state.get('email_logs', []))
+        st.session_state['query_instructions'] = saved_state.get('query_instructions', "")
+        st.session_state['email_template_subject'] = saved_state.get('email_template_subject', "")
+        st.session_state['email_template_body'] = saved_state.get('email_template_body', "")
         
     except FileNotFoundError:
         initialize_session_state()
@@ -633,7 +650,7 @@ def scrape_profiles(queries_df):
                 "api_key": SERPAPI_API_KEY,
                 "hl": "en",
                 "gl": "us",  # Keep US as base for consistent results
-                "num": 5
+                "num": 100
             })
             serp_results = search.get_dict()
             
