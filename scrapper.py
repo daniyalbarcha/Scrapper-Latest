@@ -18,7 +18,6 @@ from datetime import datetime, timedelta
 from streamlit_quill import st_quill
 import logging
 from geopy.geocoders import Nominatim
-from geopy.adapters import HTTPAdapter
 from geopy.distance import geodesic
 from geopy.exc import GeocoderTimedOut
 import certifi
@@ -110,27 +109,15 @@ SESSION_STATE_FILE = "session_state.json"
 
 class LocationValidator:
     def __init__(self):
-        # Create a geopy geocoder with SSL verification disabled
-        from geopy.adapters import HTTPAdapter
+        # Create a geopy geocoder with SSL verification disabled without using HTTPAdapter
         import urllib3
         
-        # Create a session with a retry policy and disabled SSL verification
-        session = urllib3.PoolManager(
-            retries=urllib3.Retry(
-                total=3,
-                backoff_factor=0.5,
-                status_forcelist=[500, 502, 503, 504]
-            ),
-            cert_reqs='CERT_NONE',  # Don't verify SSL certificates
-            assert_hostname=False
-        )
+        # Disable SSL certificate verification globally
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
         
-        adapter = HTTPAdapter(pool_connections=10, pool_maxsize=10, max_retries=3, pool_block=False)
-        
+        # Create a simpler geocoder without adapter
         self.geolocator = Nominatim(
             user_agent="instagram_scraper",
-            scheme="https",  # Use HTTPS
-            adapter_factory=lambda: adapter,
             timeout=10
         )
         self.location_cache = {}  # Cache for geocoding results
@@ -148,38 +135,47 @@ class LocationValidator:
                 return self.location_cache[location_str]
             
             # Try geocoding with timeout and error handling
-            try:
-                # Try first with verify=False to avoid SSL certificate issues
-                location = self.geolocator.geocode(location_str, language='en', timeout=10)
-            except Exception as geocode_error:
-                print(f"Geocoding failed for: {location_str} - {str(geocode_error)}")
-                # If geocoding fails, use fallback
+            for attempt in range(3):  # Try up to 3 times
+                try:
+                    # Try to geocode with a timeout
+                    location = self.geolocator.geocode(
+                        location_str, 
+                        language='en', 
+                        timeout=10
+                    )
+                    
+                    if location:
+                        break  # Success, exit the retry loop
+                except Exception as geocode_error:
+                    print(f"Geocoding attempt {attempt+1} failed for: {location_str} - {str(geocode_error)}")
+                    if attempt == 2:  # Last attempt failed
+                        return self._create_fallback_location(location_str)
+                    time.sleep(1)  # Wait before retrying
+            
+            # If we got here and location is None, geocoding failed
+            if location is None:
+                print(f"No results found for: {location_str}")
                 return self._create_fallback_location(location_str)
                 
-            if location:
-                # Parse address components
-                address_parts = location.raw.get('address', {})
-                country = address_parts.get('country', '')
-                state = address_parts.get('state', '')
-                city = address_parts.get('city', '') or address_parts.get('town', '') or address_parts.get('village', '')
-                
-                result = {
-                    'type': 'location',
-                    'name': location.address,
-                    'coords': (location.latitude, location.longitude),
-                    'country': country,
-                    'state': state,
-                    'city': city,
-                    'raw': location.raw
-                }
-                
-                # Cache the result
-                self.location_cache[location_str] = result
-                return result
-            else:
-                # Geocoding returned no results
-                print(f"No geocoding results for: {location_str}")
-                return self._create_fallback_location(location_str)
+            # Parse address components
+            address_parts = location.raw.get('address', {})
+            country = address_parts.get('country', '')
+            state = address_parts.get('state', '')
+            city = address_parts.get('city', '') or address_parts.get('town', '') or address_parts.get('village', '')
+            
+            result = {
+                'type': 'location',
+                'name': location.address,
+                'coords': (location.latitude, location.longitude),
+                'country': country,
+                'state': state,
+                'city': city,
+                'raw': location.raw
+            }
+            
+            # Cache the result
+            self.location_cache[location_str] = result
+            return result
             
         except Exception as e:
             print(f"Error validating location {location_str}: {e}")
