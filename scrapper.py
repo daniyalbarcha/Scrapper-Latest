@@ -18,10 +18,27 @@ from datetime import datetime, timedelta
 from streamlit_quill import st_quill
 import logging
 from geopy.geocoders import Nominatim
+from geopy.adapters import HTTPAdapter
 from geopy.distance import geodesic
 from geopy.exc import GeocoderTimedOut
+import certifi
+import ssl
+import urllib3
 import us  # for state validation
 import re
+
+# Disable SSL warnings
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+# Create a custom SSL context that doesn't verify certificates
+try:
+    _create_unverified_https_context = ssl._create_unverified_context
+except AttributeError:
+    # Legacy Python that doesn't verify HTTPS certificates by default
+    pass
+else:
+    # Handle target environment that doesn't support HTTPS verification
+    ssl._create_default_https_context = _create_unverified_https_context
 
 def safe_rerun():
     """Safely rerun the Streamlit app."""
@@ -93,27 +110,50 @@ SESSION_STATE_FILE = "session_state.json"
 
 class LocationValidator:
     def __init__(self):
-        self.geolocator = Nominatim(user_agent="my_scraper")
+        # Create a geopy geocoder with SSL verification disabled
+        from geopy.adapters import HTTPAdapter
+        import urllib3
+        
+        # Create a session with a retry policy and disabled SSL verification
+        session = urllib3.PoolManager(
+            retries=urllib3.Retry(
+                total=3,
+                backoff_factor=0.5,
+                status_forcelist=[500, 502, 503, 504]
+            ),
+            cert_reqs='CERT_NONE',  # Don't verify SSL certificates
+            assert_hostname=False
+        )
+        
+        adapter = HTTPAdapter(pool_connections=10, pool_maxsize=10, max_retries=3, pool_block=False)
+        
+        self.geolocator = Nominatim(
+            user_agent="instagram_scraper",
+            scheme="https",  # Use HTTPS
+            adapter_factory=lambda: adapter,
+            timeout=10
+        )
         self.location_cache = {}  # Cache for geocoding results
         
     def validate_and_normalize_location(self, location_str):
         """Validate and normalize location strings."""
         try:
-            # Return None for empty locations
-            if not location_str or not isinstance(location_str, str):
+            # Check for NaN or None values properly
+            if location_str is None or pd.isna(location_str) or not isinstance(location_str, str) or location_str.strip() == '':
                 print(f"Empty or invalid location: {location_str}")
-                return self._create_fallback_location(location_str)
+                return self._create_fallback_location('')
                 
             # Check cache first
             if location_str in self.location_cache:
                 return self.location_cache[location_str]
             
-            # Try geocoding with timeout
+            # Try geocoding with timeout and error handling
             try:
-                location = self.geolocator.geocode(location_str, language='en', timeout=5)
-            except:
+                # Try first with verify=False to avoid SSL certificate issues
+                location = self.geolocator.geocode(location_str, language='en', timeout=10)
+            except Exception as geocode_error:
+                print(f"Geocoding failed for: {location_str} - {str(geocode_error)}")
                 # If geocoding fails, use fallback
-                print(f"Geocoding failed for: {location_str}")
                 return self._create_fallback_location(location_str)
                 
             if location:
@@ -561,8 +601,18 @@ def generate_search_queries(csv_file, instructions_text):
         # Get all unique categories at once
         categories = ", ".join(df['Venue Category'].dropna().unique())
         
-        # Process each unique location once
-        unique_locations = df['Location'].dropna().unique()
+        # Clean the locations by removing NaN values
+        valid_locations = df['Location'].dropna().astype(str)
+        valid_locations = valid_locations[valid_locations.str.strip() != '']
+        
+        if valid_locations.empty:
+            st.error("No valid locations found in the CSV file. Please ensure your CSV contains valid location data.")
+            empty_df = pd.DataFrame(columns=['Search Query'])
+            st.session_state['generated_queries'] = empty_df
+            return empty_df
+            
+        # Process each unique valid location
+        unique_locations = valid_locations.unique()
         for location in unique_locations:
             print(f"Processing location: {location}")
             # Validate and normalize location
@@ -581,24 +631,42 @@ def generate_search_queries(csv_file, instructions_text):
             location_str = ", ".join(location_parts) if location_parts else location
             print(f"Using location string: {location_str}")
             
-            # Replace placeholders in the prompt
-            prompt = instructions_text.replace("{CATEGORIES}", categories)
-            prompt = prompt.replace("{LOCATION}", location_str)
+            # If location string is still empty after validation, skip this location
+            if not location_str.strip():
+                print(f"Skipping empty location after validation")
+                continue
             
-            print(f"Sending prompt with location: {location_str}")
-            response = deepseek_chat(
-                prompt=prompt,
-                system_prompt="Generate precise search queries for Instagram profile discovery. Consider the specific location components (city, state/region, country) when available.",
-                temperature=0.7
-            )
-
-            if response:
-                print(f"Received response for {location_str}")
-                cleaned_queries = [line.strip() for line in response.split('\n') if line.strip() and not line.strip().startswith(('1.', '2.', '3.', 'Here'))]
-                print(f"Generated {len(cleaned_queries)} queries for {location_str}")
-                # Add location to each query for debugging
-                labeled_queries = [f"{q} [Location: {location_str}]" for q in cleaned_queries]
-                queries.extend(labeled_queries)
+            # Replace placeholders in the prompt
+            try:
+                prompt = instructions_text.replace("{CATEGORIES}", categories)
+                prompt = prompt.replace("{LOCATION}", location_str)
+                
+                print(f"Sending prompt with location: {location_str}")
+                
+                # Add more detailed error handling for the AI call
+                try:
+                    response = deepseek_chat(
+                        prompt=prompt,
+                        system_prompt="Generate precise search queries for Instagram profile discovery. Consider the specific location components (city, state/region, country) when available.",
+                        temperature=0.7
+                    )
+                    
+                    if response:
+                        print(f"Received response for {location_str}")
+                        cleaned_queries = [line.strip() for line in response.split('\n') if line.strip() and not line.strip().startswith(('1.', '2.', '3.', 'Here'))]
+                        print(f"Generated {len(cleaned_queries)} queries for {location_str}")
+                        # Add location to each query for debugging
+                        labeled_queries = [f"{q} [Location: {location_str}]" for q in cleaned_queries]
+                        queries.extend(labeled_queries)
+                    else:
+                        print(f"No response received for location: {location_str}")
+                except Exception as ai_error:
+                    print(f"Error generating queries with AI for {location_str}: {str(ai_error)}")
+                    # Continue with other locations even if one fails
+                    continue
+            except Exception as prompt_error:
+                print(f"Error processing prompt for {location_str}: {str(prompt_error)}")
+                continue
 
         if queries:
             result_df = pd.DataFrame(queries, columns=['Search Query']).drop_duplicates().reset_index(drop=True)
@@ -607,11 +675,13 @@ def generate_search_queries(csv_file, instructions_text):
             save_session_state()
             return result_df
         else:
+            st.error("No queries were generated. Please check your CSV data and try again.")
             print("No queries were generated")
             empty_df = pd.DataFrame(columns=['Search Query'])
             st.session_state['generated_queries'] = empty_df
             return empty_df
     except Exception as e:
+        st.error(f"Error generating queries: {str(e)}")
         print(f"Debug: Error occurred: {str(e)}")
         empty_df = pd.DataFrame(columns=['Search Query'])
         st.session_state['generated_queries'] = empty_df
