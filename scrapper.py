@@ -1,10 +1,13 @@
 import streamlit as st
 st.set_page_config(page_title="Instagram Scraper Pro", page_icon="📸", layout="wide")
 
+# Force disable SSL verification at the beginning
+import os
+os.environ['PYTHONHTTPSVERIFY'] = '0'
+
 import pandas as pd
 import time
 import random
-import os
 import json
 import requests
 import openai  # For ChatGPT usage
