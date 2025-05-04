@@ -59,7 +59,7 @@ def fix_env_file_encoding():
         tried_encodings = []
         
         # Try multiple encodings
-        for encoding in ['utf-8', 'utf-16', 'utf-16-le', 'utf-16-be', 'latin-1']:
+        for encoding in ['utf-8', 'utf-16', 'utf-16-le', 'utf-16-be', 'latin-1', 'ascii']:
             tried_encodings.append(encoding)
             try:
                 with open(env_path, 'r', encoding=encoding) as f:
@@ -81,15 +81,73 @@ def fix_env_file_encoding():
                 f.write(content)
             logger.info("Fixed .env file encoding to UTF-8")
 
+# Custom function to load dotenv with proper encoding handling
+def safe_load_dotenv():
+    """Load dotenv with encoding error handling."""
+    env_path = '.env'
+    if not os.path.exists(env_path):
+        return False
+    
+    # First try to fix encoding
+    try:
+        fix_env_file_encoding()
+    except Exception as e:
+        logger.warning(f"Error fixing .env file encoding: {e}")
+    
+    # If fixing didn't work, let's create a basic .env file
+    try:
+        # Try loading with standard method first
+        result = load_dotenv()
+        if result:
+            return True
+    except UnicodeDecodeError:
+        logger.warning("Error loading .env file with standard method, creating new one")
+        
+        # Backup the problematic file
+        if os.path.exists(env_path):
+            try:
+                os.rename(env_path, f"{env_path}.error")
+                logger.info(f"Renamed problematic .env file to {env_path}.error")
+            except Exception:
+                pass
+        
+        # Create a new empty .env file with UTF-8 encoding
+        with open(env_path, 'w', encoding='utf-8') as f:
+            f.write("# This file was automatically created by the application\n")
+            f.write("# Fill in your API keys and settings below\n\n")
+            f.write("# API Keys\n")
+            f.write("SERPAPI_API_KEY=\n")
+            f.write("OPENAI_API_KEY=\n")
+            f.write("RAPIDAPI_KEY=\n")
+            f.write("SENDGRID_API_KEY=\n\n")
+            f.write("# Domain Settings\n")
+            f.write("MAIN_DOMAIN=\n\n")
+            f.write("# Zoho Email Settings\n")
+            f.write("ZOHO_EMAIL_1=\n")
+            f.write("ZOHO_PASSWORD_1=\n")
+            f.write("ZOHO_SERVICE_TYPE_1=\n\n")
+            f.write("# SendGrid Settings\n")
+            f.write("SENDGRID_FROM_EMAIL=\n")
+            f.write("SENDGRID_FROM_NAME=\n")
+        
+        logger.info("Created new .env file with UTF-8 encoding")
+        
+        # Try loading again
+        return load_dotenv()
+    
+    return False
+
 # Fix .env encoding before loading environment variables
 try:
-    fix_env_file_encoding()
+    # Use our custom safe loading function
+    safe_load_dotenv()
 except Exception as e:
-    logger.warning(f"Error fixing .env file encoding: {e}")
+    logger.warning(f"Error with safe dotenv loading: {e}")
     # Continue with program even if fix fails
 
 # Load environment variables
-load_dotenv()
+# load_dotenv()  # Comment out the original call
+# We already loaded dotenv in safe_load_dotenv
 
 # Initialize settings manager at the module level
 settings_manager = SettingsManager()
