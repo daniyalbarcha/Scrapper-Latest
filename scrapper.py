@@ -9,7 +9,7 @@ import json
 import requests
 import openai  # For ChatGPT usage
 from serpapi import GoogleSearch
-from dotenv import load_dotenv
+import env_loader  # Import our custom env loader
 from urllib.parse import urlparse
 from typing import Optional
 import imaplib
@@ -49,133 +49,12 @@ from settings_manager import SettingsManager
 from zoho_mail_handler import ZohoMailHandler
 from email_manager import EmailManager
 
-# Auto-fix .env file encoding before loading
-def fix_env_file_encoding():
-    """Fix .env file encoding to UTF-8 if it exists and has encoding issues."""
-    env_path = '.env'
-    if os.path.exists(env_path):
-        # Try to detect encoding and fix issues
-        content = None
-        tried_encodings = []
-        
-        # Try multiple encodings
-        for encoding in ['utf-8', 'utf-16', 'utf-16-le', 'utf-16-be', 'latin-1', 'ascii']:
-            tried_encodings.append(encoding)
-            try:
-                with open(env_path, 'r', encoding=encoding) as f:
-                    content = f.read()
-                logger.info(f"Successfully read .env with {encoding} encoding")
-                break
-            except UnicodeError:
-                continue
-        
-        # If we successfully read the file and it wasn't UTF-8
-        if content is not None and 'utf-8' not in tried_encodings[:tried_encodings.index(encoding)+1]:
-            # Backup original
-            backup_path = f"{env_path}.bak"
-            os.rename(env_path, backup_path)
-            logger.info(f"Backed up original .env file to {backup_path}")
-            
-            # Write with UTF-8 encoding
-            with open(env_path, 'w', encoding='utf-8') as f:
-                f.write(content)
-            logger.info("Fixed .env file encoding to UTF-8")
+# Comment out all dotenv handling and replace with our custom loader
+# Ensure .env exists with template values
+env_loader.ensure_env_file_exists()
 
-# Custom function to load dotenv with proper encoding handling
-def safe_load_dotenv():
-    """Load dotenv with encoding error handling."""
-    env_path = '.env'
-    
-    # If the file doesn't exist, create a clean one
-    if not os.path.exists(env_path):
-        logger.info(".env file does not exist, creating clean template")
-        _create_clean_env_file(env_path)
-        return load_dotenv()
-    
-    # Try to validate if the file is properly encoded
-    try:
-        # Try reading with UTF-8 first
-        with open(env_path, 'r', encoding='utf-8') as f:
-            content = f.read()
-            
-        # Check if content looks valid by searching for expected patterns
-        if '=' in content and not any(c > '\uFFFF' for c in content):
-            # Content looks valid, just load it
-            return load_dotenv()
-            
-        # If content is garbled (has unusual characters), backup and recreate
-        logger.warning("Existing .env file contains corrupted content, creating clean template")
-        _backup_and_recreate_env(env_path)
-        return load_dotenv()
-            
-    except UnicodeDecodeError:
-        # If we can't read it as UTF-8, it's definitely corrupted
-        logger.warning("Cannot read .env file with UTF-8 encoding, creating clean template")
-        _backup_and_recreate_env(env_path)
-        return load_dotenv()
-    except Exception as e:
-        logger.warning(f"Unexpected error reading .env file: {e}, creating clean template")
-        _backup_and_recreate_env(env_path)
-        return load_dotenv()
-
-def _backup_and_recreate_env(env_path):
-    """Backup corrupted .env file and create clean template."""
-    try:
-        # Generate unique backup name
-        timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-        backup_path = f"{env_path}.corrupted.{timestamp}"
-        
-        # Backup the file
-        os.rename(env_path, backup_path)
-        logger.info(f"Backed up corrupted .env file to {backup_path}")
-        
-        # Create clean template
-        _create_clean_env_file(env_path)
-    except Exception as e:
-        logger.error(f"Error backing up corrupted .env file: {e}")
-        # Try to create clean template anyway
-        _create_clean_env_file(env_path)
-
-def _create_clean_env_file(env_path):
-    """Create a clean .env template file."""
-    with open(env_path, 'w', encoding='utf-8') as f:
-        f.write("# API Keys\n")
-        f.write("SERPAPI_API_KEY=\n")
-        f.write("OPENAI_API_KEY=\n")
-        f.write("RAPIDAPI_KEY=\n")
-        f.write("SENDGRID_API_KEY=\n\n")
-        f.write("# Domain Settings\n")
-        f.write("MAIN_DOMAIN=\n\n")
-        f.write("# Zoho Email Settings\n")
-        f.write("ZOHO_EMAIL_1=\n")
-        f.write("ZOHO_PASSWORD_1=\n")
-        f.write("ZOHO_SERVICE_TYPE_1=\n\n")
-        f.write("# SendGrid Settings\n")
-        f.write("SENDGRID_FROM_EMAIL=\n")
-        f.write("SENDGRID_FROM_NAME=\n")
-    logger.info(f"Created clean .env template at {env_path}")
-
-# Fix .env encoding before loading environment variables
-try:
-    # Use our custom safe loading function
-    safe_load_dotenv()
-except Exception as e:
-    logger.warning(f"Error with safe dotenv loading: {e}")
-    # Fallback - create basic .env file directly
-    try:
-        with open('.env', 'w', encoding='utf-8') as f:
-            f.write("# API Keys\n")
-            f.write("SERPAPI_API_KEY=\n")
-            f.write("OPENAI_API_KEY=\n")
-            f.write("RAPIDAPI_KEY=\n")
-            f.write("SENDGRID_API_KEY=\n\n")
-        load_dotenv()
-    except Exception:
-        pass  # Last resort - continue without .env
-
-# Load environment variables
-# load_dotenv()  # Comment out the original call
-# We already loaded dotenv in safe_load_dotenv
+# Load environment variables without dotenv
+env_vars = env_loader.load_environment_vars()
 
 # Initialize settings manager at the module level
 settings_manager = SettingsManager()
@@ -194,10 +73,10 @@ if 'email_manager' not in st.session_state:
 # ------------------ INITIAL SETUP ------------------
 
 # API Keys and Email Credentials
-SERPAPI_API_KEY = os.getenv("SERPAPI_API_KEY")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")  # Using ChatGPT
-RAPIDAPI_KEY = os.getenv("RAPIDAPI_KEY")
-SENDGRID_API_KEY = os.getenv("SENDGRID_API_KEY")
+SERPAPI_API_KEY = env_vars.get("SERPAPI_API_KEY")
+OPENAI_API_KEY = env_vars.get("OPENAI_API_KEY")  # Using ChatGPT
+RAPIDAPI_KEY = env_vars.get("RAPIDAPI_KEY")
+SENDGRID_API_KEY = env_vars.get("SENDGRID_API_KEY")
 
 openai.api_key = OPENAI_API_KEY
 
@@ -1388,7 +1267,7 @@ with st.sidebar:
             st.success("Settings saved!")
             
             # Force reload environment variables
-            load_dotenv()
+            env_loader.load_environment_vars()
             
             save_session_state()
             st.rerun()

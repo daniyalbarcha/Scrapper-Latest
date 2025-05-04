@@ -10,30 +10,42 @@ import logging
 logger = logging.getLogger(__name__)
 
 class SettingsManager:
-    def __init__(self, settings_file: str = "settings.json"):
-        """Initialize settings manager and load settings from both .env and settings.json"""
-        self.settings_file = settings_file
-        # Force reload environment variables with absolute path
-        env_path = os.path.join(os.getcwd(), '.env')
-        load_dotenv(dotenv_path=env_path, override=True)
+    def __init__(self):
+        """Initialize the settings manager."""
+        self.settings_file = "settings.json"
+        self.settings = {}
         
-        # Load API keys from .env
-        self.serpapi_key = os.getenv("SERPAPI_API_KEY")
-        self.openai_key = os.getenv("OPENAI_API_KEY")
-        self.rapidapi_key = os.getenv("RAPIDAPI_KEY")
-        self.sendgrid_key = os.getenv("SENDGRID_API_KEY")
+        # Load environment variables using custom loader if available
+        try:
+            import env_loader
+            env_vars = env_loader.load_environment_vars()
+            self.serpapi_key = env_vars.get("SERPAPI_API_KEY")
+            self.openai_key = env_vars.get("OPENAI_API_KEY")
+            self.rapidapi_key = env_vars.get("RAPIDAPI_KEY")
+            self.sendgrid_key = env_vars.get("SENDGRID_API_KEY")
+            self.main_domain = env_vars.get("MAIN_DOMAIN")
+            self.cold_email = env_vars.get("SENDGRID_FROM_EMAIL")
+            self.from_name = env_vars.get("SENDGRID_FROM_NAME")
+            self.response_email = env_vars.get("ZOHO_EMAIL_1")
+            self.email_password = env_vars.get("ZOHO_PASSWORD_1")
+        except ImportError:
+            # Fallback to os.getenv if env_loader not available
+            import os
+            self.serpapi_key = os.getenv("SERPAPI_API_KEY")
+            self.openai_key = os.getenv("OPENAI_API_KEY")
+            self.rapidapi_key = os.getenv("RAPIDAPI_KEY")
+            self.sendgrid_key = os.getenv("SENDGRID_API_KEY")
+            self.main_domain = os.getenv("MAIN_DOMAIN")
+            self.cold_email = os.getenv("SENDGRID_FROM_EMAIL")
+            self.from_name = os.getenv("SENDGRID_FROM_NAME")
+            self.response_email = os.getenv("ZOHO_EMAIL_1")
+            self.email_password = os.getenv("ZOHO_PASSWORD_1")
         
         # Initialize domain settings
-        self.main_domain = os.getenv("MAIN_DOMAIN", "hoppenly.com")
         self.cold_email_domain = f"mail.{self.main_domain}"
         
         # Load Zoho accounts from environment variables
         self.zoho_accounts = self._load_zoho_accounts()
-        
-        # Load email credentials from .env
-        self.response_email = os.getenv("ZOHO_EMAIL_1", f"contact@{self.main_domain}")
-        self.cold_email = os.getenv("SENDGRID_FROM_EMAIL", f"outreach@{self.cold_email_domain}")
-        self.email_password = os.getenv("ZOHO_PASSWORD_1")
         
         # Initialize settings dictionary
         self.settings = {
