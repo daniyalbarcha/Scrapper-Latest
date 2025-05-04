@@ -85,57 +85,75 @@ def fix_env_file_encoding():
 def safe_load_dotenv():
     """Load dotenv with encoding error handling."""
     env_path = '.env'
+    
+    # If the file doesn't exist, create a clean one
     if not os.path.exists(env_path):
-        return False
-    
-    # First try to fix encoding
-    try:
-        fix_env_file_encoding()
-    except Exception as e:
-        logger.warning(f"Error fixing .env file encoding: {e}")
-    
-    # If fixing didn't work, let's create a basic .env file
-    try:
-        # Try loading with standard method first
-        result = load_dotenv()
-        if result:
-            return True
-    except UnicodeDecodeError:
-        logger.warning("Error loading .env file with standard method, creating new one")
-        
-        # Backup the problematic file
-        if os.path.exists(env_path):
-            try:
-                os.rename(env_path, f"{env_path}.error")
-                logger.info(f"Renamed problematic .env file to {env_path}.error")
-            except Exception:
-                pass
-        
-        # Create a new empty .env file with UTF-8 encoding
-        with open(env_path, 'w', encoding='utf-8') as f:
-            f.write("# This file was automatically created by the application\n")
-            f.write("# Fill in your API keys and settings below\n\n")
-            f.write("# API Keys\n")
-            f.write("SERPAPI_API_KEY=\n")
-            f.write("OPENAI_API_KEY=\n")
-            f.write("RAPIDAPI_KEY=\n")
-            f.write("SENDGRID_API_KEY=\n\n")
-            f.write("# Domain Settings\n")
-            f.write("MAIN_DOMAIN=\n\n")
-            f.write("# Zoho Email Settings\n")
-            f.write("ZOHO_EMAIL_1=\n")
-            f.write("ZOHO_PASSWORD_1=\n")
-            f.write("ZOHO_SERVICE_TYPE_1=\n\n")
-            f.write("# SendGrid Settings\n")
-            f.write("SENDGRID_FROM_EMAIL=\n")
-            f.write("SENDGRID_FROM_NAME=\n")
-        
-        logger.info("Created new .env file with UTF-8 encoding")
-        
-        # Try loading again
+        logger.info(".env file does not exist, creating clean template")
+        _create_clean_env_file(env_path)
         return load_dotenv()
     
-    return False
+    # Try to validate if the file is properly encoded
+    try:
+        # Try reading with UTF-8 first
+        with open(env_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+            
+        # Check if content looks valid by searching for expected patterns
+        if '=' in content and not any(c > '\uFFFF' for c in content):
+            # Content looks valid, just load it
+            return load_dotenv()
+            
+        # If content is garbled (has unusual characters), backup and recreate
+        logger.warning("Existing .env file contains corrupted content, creating clean template")
+        _backup_and_recreate_env(env_path)
+        return load_dotenv()
+            
+    except UnicodeDecodeError:
+        # If we can't read it as UTF-8, it's definitely corrupted
+        logger.warning("Cannot read .env file with UTF-8 encoding, creating clean template")
+        _backup_and_recreate_env(env_path)
+        return load_dotenv()
+    except Exception as e:
+        logger.warning(f"Unexpected error reading .env file: {e}, creating clean template")
+        _backup_and_recreate_env(env_path)
+        return load_dotenv()
+
+def _backup_and_recreate_env(env_path):
+    """Backup corrupted .env file and create clean template."""
+    try:
+        # Generate unique backup name
+        timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+        backup_path = f"{env_path}.corrupted.{timestamp}"
+        
+        # Backup the file
+        os.rename(env_path, backup_path)
+        logger.info(f"Backed up corrupted .env file to {backup_path}")
+        
+        # Create clean template
+        _create_clean_env_file(env_path)
+    except Exception as e:
+        logger.error(f"Error backing up corrupted .env file: {e}")
+        # Try to create clean template anyway
+        _create_clean_env_file(env_path)
+
+def _create_clean_env_file(env_path):
+    """Create a clean .env template file."""
+    with open(env_path, 'w', encoding='utf-8') as f:
+        f.write("# API Keys\n")
+        f.write("SERPAPI_API_KEY=\n")
+        f.write("OPENAI_API_KEY=\n")
+        f.write("RAPIDAPI_KEY=\n")
+        f.write("SENDGRID_API_KEY=\n\n")
+        f.write("# Domain Settings\n")
+        f.write("MAIN_DOMAIN=\n\n")
+        f.write("# Zoho Email Settings\n")
+        f.write("ZOHO_EMAIL_1=\n")
+        f.write("ZOHO_PASSWORD_1=\n")
+        f.write("ZOHO_SERVICE_TYPE_1=\n\n")
+        f.write("# SendGrid Settings\n")
+        f.write("SENDGRID_FROM_EMAIL=\n")
+        f.write("SENDGRID_FROM_NAME=\n")
+    logger.info(f"Created clean .env template at {env_path}")
 
 # Fix .env encoding before loading environment variables
 try:
@@ -143,7 +161,17 @@ try:
     safe_load_dotenv()
 except Exception as e:
     logger.warning(f"Error with safe dotenv loading: {e}")
-    # Continue with program even if fix fails
+    # Fallback - create basic .env file directly
+    try:
+        with open('.env', 'w', encoding='utf-8') as f:
+            f.write("# API Keys\n")
+            f.write("SERPAPI_API_KEY=\n")
+            f.write("OPENAI_API_KEY=\n")
+            f.write("RAPIDAPI_KEY=\n")
+            f.write("SENDGRID_API_KEY=\n\n")
+        load_dotenv()
+    except Exception:
+        pass  # Last resort - continue without .env
 
 # Load environment variables
 # load_dotenv()  # Comment out the original call
