@@ -49,6 +49,45 @@ from settings_manager import SettingsManager
 from zoho_mail_handler import ZohoMailHandler
 from email_manager import EmailManager
 
+# Auto-fix .env file encoding before loading
+def fix_env_file_encoding():
+    """Fix .env file encoding to UTF-8 if it exists and has encoding issues."""
+    env_path = '.env'
+    if os.path.exists(env_path):
+        # Try to detect encoding and fix issues
+        content = None
+        tried_encodings = []
+        
+        # Try multiple encodings
+        for encoding in ['utf-8', 'utf-16', 'utf-16-le', 'utf-16-be', 'latin-1']:
+            tried_encodings.append(encoding)
+            try:
+                with open(env_path, 'r', encoding=encoding) as f:
+                    content = f.read()
+                logger.info(f"Successfully read .env with {encoding} encoding")
+                break
+            except UnicodeError:
+                continue
+        
+        # If we successfully read the file and it wasn't UTF-8
+        if content is not None and 'utf-8' not in tried_encodings[:tried_encodings.index(encoding)+1]:
+            # Backup original
+            backup_path = f"{env_path}.bak"
+            os.rename(env_path, backup_path)
+            logger.info(f"Backed up original .env file to {backup_path}")
+            
+            # Write with UTF-8 encoding
+            with open(env_path, 'w', encoding='utf-8') as f:
+                f.write(content)
+            logger.info("Fixed .env file encoding to UTF-8")
+
+# Fix .env encoding before loading environment variables
+try:
+    fix_env_file_encoding()
+except Exception as e:
+    logger.warning(f"Error fixing .env file encoding: {e}")
+    # Continue with program even if fix fails
+
 # Load environment variables
 load_dotenv()
 
