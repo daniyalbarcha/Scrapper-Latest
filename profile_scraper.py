@@ -58,7 +58,8 @@ class ProfileScraper:
             response = requests.get(
                 self.post_api_url,
                 headers=self.headers,
-                params={"shortcode": short_code}
+                params={"shortcode": short_code},
+                verify=False
             )
             response.raise_for_status()
             top_data = response.json()
@@ -75,7 +76,8 @@ class ProfileScraper:
             response = requests.get(
                 self.post_api_url,
                 headers=self.headers,
-                params={"shortcode": short_code}
+                params={"shortcode": short_code},
+                verify=False
             )
             response.raise_for_status()
             top_data = response.json()
@@ -96,7 +98,8 @@ class ProfileScraper:
             response = requests.get(
                 self.profile_api_url,
                 headers=self.headers,
-                params={"username_or_id_or_url": username}
+                params={"username_or_id_or_url": username},
+                verify=False
             )
             response.raise_for_status()
 

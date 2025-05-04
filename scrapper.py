@@ -29,6 +29,13 @@ import urllib3
 import us  # for state validation
 import re
 
+# ===================================================================
+# IMPORTANT: SSL Certificate Verification is disabled in this script
+# This is done to handle environments with missing or invalid SSL certificates
+# While this is not ideal for production, it's necessary to work around
+# certificate issues in certain environments. This is a temporary solution.
+# ===================================================================
+
 # Disable SSL warnings
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -114,14 +121,22 @@ class LocationValidator:
     def __init__(self):
         # Create a geopy geocoder with SSL verification disabled without using HTTPAdapter
         import urllib3
+        import ssl
         
         # Disable SSL certificate verification globally
         urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
         
-        # Create a simpler geocoder without adapter
+        # Create a custom SSL context that doesn't verify certificates
+        ssl_context = ssl.create_default_context()
+        ssl_context.check_hostname = False
+        ssl_context.verify_mode = ssl.CERT_NONE
+        
+        # Create a simpler geocoder with SSL verification disabled
         self.geolocator = Nominatim(
             user_agent="instagram_scraper",
-            timeout=10
+            timeout=10,
+            scheme="https",
+            ssl_context=ssl_context
         )
         self.location_cache = {}  # Cache for geocoding results
         
@@ -140,7 +155,7 @@ class LocationValidator:
             # Try geocoding with timeout and error handling
             for attempt in range(3):  # Try up to 3 times
                 try:
-                    # Try to geocode with a timeout
+                    # Try to geocode with a timeout and SSL verification disabled
                     location = self.geolocator.geocode(
                         location_str, 
                         language='en', 
@@ -547,7 +562,8 @@ def get_post_owner(url: str) -> Optional[str]:
         response = requests.get(
             POST_API_URL,
             headers=HEADERS,
-            params={"shortcode": short_code}
+            params={"shortcode": short_code},
+            verify=False  # Disable SSL verification
         )
         response.raise_for_status()
         top_data = response.json()
@@ -564,7 +580,8 @@ def scrape_recent_post_caption(url: str) -> str:
         response = requests.get(
             POST_API_URL,
             headers=HEADERS,
-            params={"shortcode": short_code}
+            params={"shortcode": short_code},
+            verify=False  # Disable SSL verification
         )
         response.raise_for_status()
         top_data = response.json()
@@ -701,7 +718,8 @@ def scrape_profile_details(url: str, max_retries=3, retry_delay=2):
                 PROFILE_API_URL,
                 headers=HEADERS,
                 params={"username_or_id_or_url": username},
-                timeout=15
+                timeout=15,
+                verify=False  # Disable SSL verification
             )
 
             # If 404 with username, try with full URL
@@ -710,7 +728,8 @@ def scrape_profile_details(url: str, max_retries=3, retry_delay=2):
                     PROFILE_API_URL,
                     headers=HEADERS,
                     params={"username_or_id_or_url": url},
-                    timeout=15
+                    timeout=15,
+                    verify=False  # Disable SSL verification
                 )
 
             response.raise_for_status()

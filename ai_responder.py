@@ -64,7 +64,7 @@ class AIResponder:
                 website_url,
                 headers=headers,
                 timeout=10,
-                verify=True  # Verify SSL certificates
+                verify=False  # Disable SSL verification
             )
             response.raise_for_status()  # Raise an exception for bad status codes
             

@@ -41,7 +41,7 @@ def initialize_zoho_handler():
 def get_email_replies():
     """Get email replies from the backend API."""
     try:
-        response = requests.get("http://localhost:8002/email_replies")
+        response = requests.get("http://localhost:8002/email_replies", verify=False)
         return response.json()
     except Exception as e:
         print(f"Error getting email replies: {e}")
@@ -50,7 +50,7 @@ def get_email_replies():
 def get_scheduler_status():
     """Get scheduler status from the backend API."""
     try:
-        response = requests.get("http://localhost:8002/scheduler_status")
+        response = requests.get("http://localhost:8002/scheduler_status", verify=False)
         status = response.json()
         # Add last check time if available
         if 'next_run' in status:
@@ -65,7 +65,7 @@ def get_scheduler_status():
 def restart_scheduler():
     """Restart the scheduler via backend API."""
     try:
-        response = requests.post("http://localhost:8002/restart_scheduler")
+        response = requests.post("http://localhost:8002/restart_scheduler", verify=False)
         return response.json()
     except Exception as e:
         return {"error": str(e)}
@@ -73,7 +73,7 @@ def restart_scheduler():
 def trigger_email_check():
     """Trigger an immediate email check."""
     try:
-        response = requests.post("http://localhost:8002/check_now")
+        response = requests.post("http://localhost:8002/check_now", verify=False)
         return response.json()
     except Exception as e:
         return {"error": str(e)}
