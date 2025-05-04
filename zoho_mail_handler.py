@@ -52,24 +52,24 @@ class ZohoMailHandler:
         openai.api_key = openai_api_key
 
     def _load_processed_message_ids(self):
-        """Load previously processed message IDs from file."""
+        """Load previously processed message IDs from file"""
+        processed_ids = set()
         try:
-            with open('processed_messages.txt', 'r') as f:
-                self.processed_message_ids = set(f.read().splitlines())
+            with open('processed_messages.txt', 'r', encoding='utf-8') as f:
+                for line in f:
+                    processed_ids.add(line.strip())
         except FileNotFoundError:
-            self.processed_message_ids = set()
+            # Create the file if it doesn't exist
+            with open('processed_messages.txt', 'w', encoding='utf-8') as f:
+                pass
+        
+        self.processed_message_ids = processed_ids
+        return processed_ids
 
-    def _save_processed_message_id(self, message_id: str):
-        """Save a processed message ID to file."""
-        if not message_id:
-            return
-            
-        self.processed_message_ids.add(message_id)
-        try:
-            with open('processed_messages.txt', 'a') as f:
-                f.write(f"{message_id}\n")
-        except Exception as e:
-            self.logger.error(f"Error saving message ID: {str(e)}")
+    def _save_processed_message_id(self, message_id):
+        """Save a processed message ID to file"""
+        with open('processed_messages.txt', 'a', encoding='utf-8') as f:
+            f.write(f"{message_id}\n")
 
     def _validate_accounts(self):
         """Validate the email accounts configuration."""

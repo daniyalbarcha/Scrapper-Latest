@@ -271,7 +271,7 @@ def save_session_state():
     }
     
     try:
-        with open('session_state.json', 'w') as f:
+        with open('session_state.json', 'w', encoding='utf-8') as f:
             json.dump(state_to_save, f, indent=4)
     except Exception as e:
         st.error(f"Failed to save session state: {str(e)}")
@@ -292,7 +292,7 @@ def ensure_dataframe(data, columns=None):
 def load_session_state():
     """Load session state from JSON file."""
     try:
-        with open('session_state.json', 'r') as f:
+        with open('session_state.json', 'r', encoding='utf-8') as f:
             saved_state = json.load(f)
             
         # Restore all saved states

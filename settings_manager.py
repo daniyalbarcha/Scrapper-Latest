@@ -79,7 +79,7 @@ class SettingsManager:
         """Load settings from JSON file"""
         try:
             if os.path.exists(self.settings_file):
-                with open(self.settings_file, 'r') as f:
+                with open(self.settings_file, 'r', encoding='utf-8') as f:
                     settings = json.load(f)
             else:
                 settings = {}
@@ -182,7 +182,7 @@ class SettingsManager:
                 'email_password': self.email_password
             }
 
-            with open(self.settings_file, 'w') as f:
+            with open(self.settings_file, 'w', encoding='utf-8') as f:
                 json.dump(settings, f, indent=4)
                 
         except Exception as e:

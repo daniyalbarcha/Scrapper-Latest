@@ -56,7 +56,7 @@ scheduler = BackgroundScheduler(
 def load_replies():
     """Load existing replies from file."""
     try:
-        with open(REPLIES_FILE, 'r') as f:
+        with open(REPLIES_FILE, 'r', encoding='utf-8') as f:
             replies = json.load(f)
             # Convert timestamps to proper format
             for reply in replies:
@@ -83,7 +83,7 @@ def save_replies(replies):
             except ValueError:
                 pass
     
-    with open(REPLIES_FILE, 'w') as f:
+    with open(REPLIES_FILE, 'w', encoding='utf-8') as f:
         json.dump(replies, f)
 
 def check_emails():
