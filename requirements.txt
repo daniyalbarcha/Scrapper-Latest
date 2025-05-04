@@ -14,4 +14,6 @@ sendgrid>=6.9.7
 fastapi>=0.68.0
 uvicorn>=0.15.0
 python-multipart>=0.0.5
-dnspython>=2.3.0 
+dnspython>=2.3.0
+geopy>=2.3.0
+us>=2.0.2 

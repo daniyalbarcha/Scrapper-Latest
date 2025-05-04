@@ -95,12 +95,23 @@ class LocationValidator:
     def validate_and_normalize_location(self, location_str):
         """Validate and normalize location strings."""
         try:
+            # Return None for empty locations
+            if not location_str or not isinstance(location_str, str):
+                print(f"Empty or invalid location: {location_str}")
+                return self._create_fallback_location(location_str)
+                
             # Check cache first
             if location_str in self.location_cache:
                 return self.location_cache[location_str]
             
-            # Try geocoding
-            location = self.geolocator.geocode(location_str, language='en')
+            # Try geocoding with timeout
+            try:
+                location = self.geolocator.geocode(location_str, language='en', timeout=5)
+            except:
+                # If geocoding fails, use fallback
+                print(f"Geocoding failed for: {location_str}")
+                return self._create_fallback_location(location_str)
+                
             if location:
                 # Parse address components
                 address_parts = location.raw.get('address', {})
@@ -121,13 +132,67 @@ class LocationValidator:
                 # Cache the result
                 self.location_cache[location_str] = result
                 return result
-            
-            return None
+            else:
+                # Geocoding returned no results
+                print(f"No geocoding results for: {location_str}")
+                return self._create_fallback_location(location_str)
             
         except Exception as e:
             print(f"Error validating location {location_str}: {e}")
-            return None
+            return self._create_fallback_location(location_str)
     
+    def _create_fallback_location(self, location_str):
+        """Create a fallback location dictionary when geocoding fails."""
+        # If location_str is a valid string, parse it manually
+        if location_str and isinstance(location_str, str):
+            parts = [p.strip() for p in location_str.split(',')]
+            
+            # Create a simple structure based on parts count
+            if len(parts) >= 3:
+                # Likely city, state, country format
+                return {
+                    'type': 'location',
+                    'name': location_str,
+                    'coords': None,
+                    'city': parts[0],
+                    'state': parts[1],
+                    'country': parts[2],
+                    'raw': {}
+                }
+            elif len(parts) == 2:
+                # Likely city, state or state, country
+                return {
+                    'type': 'location',
+                    'name': location_str,
+                    'coords': None,
+                    'city': parts[0],
+                    'state': parts[1],
+                    'country': '',
+                    'raw': {}
+                }
+            elif len(parts) == 1:
+                # Just one element, could be city, state, or country
+                return {
+                    'type': 'location',
+                    'name': location_str,
+                    'coords': None, 
+                    'city': '',
+                    'state': '',
+                    'country': parts[0],
+                    'raw': {}
+                }
+        
+        # Empty fallback for completely invalid locations
+        return {
+            'type': 'location',
+            'name': location_str if isinstance(location_str, str) else '',
+            'coords': None,
+            'city': '',
+            'state': '',
+            'country': '',
+            'raw': {}
+        }
+
     def locations_match(self, target_location, profile_location, radius_miles=50):
         """Check if two locations match within a given radius."""
         try:
@@ -475,39 +540,61 @@ def generate_search_queries(csv_file, instructions_text):
         df = pd.read_csv(csv_file)
         location_validator = LocationValidator()
         
+        # Ensure required columns exist
+        if 'Location' not in df.columns:
+            print("Error: CSV must contain a 'Location' column")
+            empty_df = pd.DataFrame(columns=['Search Query'])
+            st.session_state['generated_queries'] = empty_df
+            return empty_df
+            
+        if 'Venue Category' not in df.columns:
+            print("Error: CSV must contain a 'Venue Category' column")
+            empty_df = pd.DataFrame(columns=['Search Query'])
+            st.session_state['generated_queries'] = empty_df
+            return empty_df
+        
         queries = []
-        for _, row in df.iterrows():
+        # Get all unique categories at once
+        categories = ", ".join(df['Venue Category'].dropna().unique())
+        
+        # Process each unique location once
+        unique_locations = df['Location'].dropna().unique()
+        for location in unique_locations:
+            print(f"Processing location: {location}")
             # Validate and normalize location
-            location = row['Location']
             validated_location = location_validator.validate_and_normalize_location(location)
             
-            if validated_location:
-                categories = ", ".join(df['Venue Category'].dropna().unique())
-                
-                # Create location string based on available components
-                location_parts = []
-                if validated_location.get('city'):
-                    location_parts.append(validated_location['city'])
-                if validated_location.get('state'):
-                    location_parts.append(validated_location['state'])
-                if validated_location.get('country'):
-                    location_parts.append(validated_location['country'])
-                
-                location_str = ", ".join(location_parts)
-                
-                # Replace placeholders in the prompt
-                prompt = instructions_text.replace("{CATEGORIES}", categories)
-                prompt = prompt.replace("{LOCATION}", location_str)
-                
-                response = deepseek_chat(
-                    prompt=prompt,
-                    system_prompt="Generate precise search queries for Instagram profile discovery. Consider the specific location components (city, state/region, country) when available.",
-                    temperature=0.7
-                )
+            # Create location string based on available components
+            location_parts = []
+            if validated_location.get('city'):
+                location_parts.append(validated_location['city'])
+            if validated_location.get('state'):
+                location_parts.append(validated_location['state'])
+            if validated_location.get('country'):
+                location_parts.append(validated_location['country'])
+            
+            # If location parts is empty, use the original location string
+            location_str = ", ".join(location_parts) if location_parts else location
+            print(f"Using location string: {location_str}")
+            
+            # Replace placeholders in the prompt
+            prompt = instructions_text.replace("{CATEGORIES}", categories)
+            prompt = prompt.replace("{LOCATION}", location_str)
+            
+            print(f"Sending prompt with location: {location_str}")
+            response = deepseek_chat(
+                prompt=prompt,
+                system_prompt="Generate precise search queries for Instagram profile discovery. Consider the specific location components (city, state/region, country) when available.",
+                temperature=0.7
+            )
 
-                if response:
-                    cleaned_queries = [line.strip() for line in response.split('\n') if line.strip() and not line.strip().startswith(('1.', '2.', '3.', 'Here'))]
-                    queries.extend(cleaned_queries)
+            if response:
+                print(f"Received response for {location_str}")
+                cleaned_queries = [line.strip() for line in response.split('\n') if line.strip() and not line.strip().startswith(('1.', '2.', '3.', 'Here'))]
+                print(f"Generated {len(cleaned_queries)} queries for {location_str}")
+                # Add location to each query for debugging
+                labeled_queries = [f"{q} [Location: {location_str}]" for q in cleaned_queries]
+                queries.extend(labeled_queries)
 
         if queries:
             result_df = pd.DataFrame(queries, columns=['Search Query']).drop_duplicates().reset_index(drop=True)
@@ -516,6 +603,7 @@ def generate_search_queries(csv_file, instructions_text):
             save_session_state()
             return result_df
         else:
+            print("No queries were generated")
             empty_df = pd.DataFrame(columns=['Search Query'])
             st.session_state['generated_queries'] = empty_df
             return empty_df
@@ -650,7 +738,7 @@ def scrape_profiles(queries_df):
                 "api_key": SERPAPI_API_KEY,
                 "hl": "en",
                 "gl": "us",  # Keep US as base for consistent results
-                "num": 100
+                "num": 10
             })
             serp_results = search.get_dict()
             
